@@ -109,7 +109,9 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 /* ── Team section ── */
 .teams-row { display:grid; grid-template-columns:repeat(var(--team-count, 5), minmax(0, 1fr)); gap:14px; align-items:start; }
 .team-section { }
-.team-title { font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px; padding-left:2px; letter-spacing:.3px; }
+.team-title { font-size:13px; font-weight:700; color:var(--accent); margin-bottom:6px; padding-left:2px; letter-spacing:.3px; }
+.team-sales-summary { font-size:11px; color:var(--text-dim); margin-bottom:10px; padding-left:2px; line-height:1.6; }
+.team-sales-summary strong { color:var(--text); font-weight:700; }
 .card-grid { display:flex; flex-direction:column; gap:10px; }
 
 /* ── Person card ── */
@@ -328,7 +330,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v2.2';
+const DASHBOARD_VERSION = 'v2.3';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -842,7 +844,18 @@ function renderDashboard() {
   for (const team of teamOrder) {
     const members = teams[team];
     if (!members) continue;
-    html += `<div class="team-section"><div class="team-title">${team}</div><div class="card-grid">`;
+    let teamWeekSales = 0, teamMonthSales = 0;
+    members.forEach(m => {
+      const d = agentData[m['상담원']];
+      if (d) { teamWeekSales += d.totalSalesAmt; teamMonthSales += d.monthlyTotal; }
+    });
+    html += `<div class="team-section">
+      <div class="team-title">${team}</div>
+      <div class="team-sales-summary">
+        <div>주간 이관 <strong>${formatWon(teamWeekSales)}</strong></div>
+        <div>월간 이관 <strong>${formatWon(teamMonthSales)}</strong></div>
+      </div>
+      <div class="card-grid">`;
     for (const m of members) {
       const name = m['상담원'];
       const d = agentData[name];
