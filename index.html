@@ -89,7 +89,11 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 
 /* ── Week history ── */
 .history-title { font-size:12px; font-weight:700; color:var(--text-dim); margin:4px 0 8px; }
-.history-row { display:flex; justify-content:space-between; align-items:center; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 14px; margin-bottom:6px; font-size:12px; box-shadow:var(--shadow); }
+.history-row { display:flex; justify-content:space-between; align-items:center; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 14px; font-size:12px; box-shadow:var(--shadow); cursor:pointer; }
+.history-row:hover { background:var(--card-hover); }
+.history-item { margin-bottom:6px; }
+.history-arrow { display:inline-block; width:10px; color:var(--text-dim); }
+.history-detail { background:transparent; }
 .history-period { color:var(--text-dim); font-weight:600; }
 .history-counts { display:flex; gap:12px; font-weight:600; }
 
@@ -275,7 +279,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v1.4';
+const DASHBOARD_VERSION = 'v1.5';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -784,13 +788,14 @@ function renderDashboard() {
   container.innerHTML = html;
 }
 
-// ── 지난 주간 히스토리 (최근 지난주가 위, 첫 주가 아래) ──
+// ── 지난 주간 히스토리 (기본 접힘, 클릭 시 펼침) ──
 function renderWeekHistory() {
   const el = document.getElementById('weekHistory');
   if (!el) return;
   if (STATE.weekOffset <= 0) { el.innerHTML = ''; return; }
 
   let html = '<div class="history-title">📜 지난 주간 기록</div>';
+  let idx = 0;
   for (let offset = STATE.weekOffset - 1; offset >= 0; offset--) {
     const range = computeWeekRangeForOffset(offset);
     const data = computeAgentDataForRange(range.start, range.end);
@@ -802,18 +807,41 @@ function renderWeekHistory() {
       else none.push(name);
     });
     const fmt = d => `${d.getMonth()+1}/${d.getDate()}`;
+    const chipList = (arr, cls) => arr.length
+      ? arr.map(n => `<span class="ag-chip" style="color:var(${cls})">${n}</span>`).join('')
+      : '<span class="ag-empty">없음</span>';
+
     html += `
-      <div class="history-row">
-        <div class="history-period">${fmt(range.start)}~${fmt(range.end)}</div>
-        <div class="history-counts">
-          <span style="color:var(--green)">🏆 ${both.length}</span>
-          <span style="color:var(--blue)">📞 ${callOnly.length}</span>
-          <span style="color:var(--purple)">💰 ${salesOnly.length}</span>
-          <span style="color:var(--red)">⚠️ ${none.length}</span>
+      <div class="history-item">
+        <div class="history-row" onclick="toggleHistoryRow(${idx})">
+          <div class="history-period"><span class="history-arrow" id="histArrow${idx}">▸</span> ${fmt(range.start)}~${fmt(range.end)}</div>
+          <div class="history-counts">
+            <span style="color:var(--green)">🏆 ${both.length}</span>
+            <span style="color:var(--blue)">📞 ${callOnly.length}</span>
+            <span style="color:var(--purple)">💰 ${salesOnly.length}</span>
+            <span style="color:var(--red)">⚠️ ${none.length}</span>
+          </div>
+        </div>
+        <div class="history-detail" id="histDetail${idx}" style="display:none">
+          <div class="achiever-bar" style="margin-top:8px;">
+            <div class="achiever-group ag-both"><div class="ag-title">🏆 콜+이관 모두 달성 (${both.length}명)</div><div class="ag-names">${chipList(both,'--green')}</div></div>
+            <div class="achiever-group ag-call"><div class="ag-title">📞 콜 달성 (${callOnly.length}명)</div><div class="ag-names">${chipList(callOnly,'--blue')}</div></div>
+            <div class="achiever-group ag-sales"><div class="ag-title">💰 이관 달성 (${salesOnly.length}명)</div><div class="ag-names">${chipList(salesOnly,'--purple')}</div></div>
+            <div class="achiever-group ag-none"><div class="ag-title">⚠️ 미달성 (${none.length}명)</div><div class="ag-names">${chipList(none,'--red')}</div></div>
+          </div>
         </div>
       </div>`;
+    idx++;
   }
   el.innerHTML = html;
+}
+
+function toggleHistoryRow(idx) {
+  const detail = document.getElementById('histDetail' + idx);
+  const arrow = document.getElementById('histArrow' + idx);
+  const isOpen = detail.style.display !== 'none';
+  detail.style.display = isOpen ? 'none' : 'block';
+  arrow.textContent = isOpen ? '▸' : '▾';
 }
 
 // ── 주간별 달성자 명단 ──
