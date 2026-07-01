@@ -103,9 +103,10 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 .summary-card .value.red { color:var(--red); }
 
 /* ── Team section ── */
-.team-section { margin-bottom:24px; }
+.teams-row { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:14px; align-items:start; }
+.team-section { }
 .team-title { font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px; padding-left:2px; letter-spacing:.3px; }
-.card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:10px; }
+.card-grid { display:flex; flex-direction:column; gap:10px; }
 
 /* ── Person card ── */
 .person-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; transition:.15s; box-shadow:var(--shadow); }
@@ -179,8 +180,11 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 @media (max-width:640px) {
   .header { padding:12px 16px; }
   .panel { padding:16px; }
-  .summary-bar, .achiever-bar { flex-direction:column; }
-  .card-grid { grid-template-columns:1fr; }
+  .achiever-bar { flex-direction:column; }
+  .teams-row { grid-template-columns:1fr; }
+}
+@media (min-width:641px) and (max-width:1100px) {
+  .teams-row { grid-template-columns:repeat(2, 1fr); }
 }
 </style>
 </head>
@@ -189,6 +193,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 <div class="header">
   <h1><span>CALL</span> ANALYTICS</h1>
   <div class="header-right">
+    <span style="font-size:11px;color:var(--text-dim)" id="versionTag"></span>
     <span style="font-size:11px;color:var(--text-dim)" id="lastSync"></span>
     <button class="theme-toggle" id="themeToggle" title="테마 전환">🌙</button>
   </div>
@@ -211,7 +216,6 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
   <div class="achiever-bar" id="achieverBar"></div>
   <div id="weekHistory"></div>
 
-  <div class="summary-bar" id="summaryBar"></div>
   <div id="teamCards"></div>
 </div>
 
@@ -271,6 +275,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
+const DASHBOARD_VERSION = 'v1.4';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -300,6 +305,7 @@ let STATE = {
 // INIT
 // ══════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  document.getElementById('versionTag').textContent = DASHBOARD_VERSION;
   initTheme();
   initTabs();
   initUpload();
@@ -757,11 +763,10 @@ function renderDashboard() {
   });
 
   renderAchieverBar(agentData);
-  renderSummaryBar(agentData);
   renderWeekHistory();
 
   const container = document.getElementById('teamCards');
-  let html = '';
+  let html = '<div class="teams-row">';
   const teamOrder = ['BM2-1팀','BM2-2팀','BM2-3팀','BM3-1팀','BM3-2팀'];
   for (const team of teamOrder) {
     const members = teams[team];
@@ -775,6 +780,7 @@ function renderDashboard() {
     }
     html += '</div></div>';
   }
+  html += '</div>';
   container.innerHTML = html;
 }
 
@@ -844,21 +850,7 @@ function renderAchieverBar(agentData) {
   `;
 }
 
-function renderSummaryBar(agentData) {
-  const all = Object.values(agentData);
-  const withCallGoal = all.filter(a => a.hasCallGoal);
-  const goalMet = withCallGoal.filter(a => a.callPct >= 100).length;
-  const totalCalls = all.reduce((s, a) => s + a.callCount, 0);
-  const totalSalesAll = all.reduce((s, a) => s + a.totalSalesAmt, 0);
-  const totalGoalAll = all.reduce((s, a) => s + (a.monthlyExempt ? 0 : a.weekSalesGoal), 0);
 
-  document.getElementById('summaryBar').innerHTML = `
-    <div class="summary-card"><div class="label">총 통화건수</div><div class="value">${totalCalls.toLocaleString()}</div></div>
-    <div class="summary-card"><div class="label">통화목표 달성</div><div class="value green">${goalMet}/${withCallGoal.length}명</div></div>
-    <div class="summary-card"><div class="label">이관매출 합계</div><div class="value">${formatWon(totalSalesAll)}</div></div>
-    <div class="summary-card"><div class="label">주간 이관목표 대비</div><div class="value ${totalGoalAll>0 && totalSalesAll>=totalGoalAll ? 'green':'yellow'}">${totalGoalAll>0?Math.round(totalSalesAll/totalGoalAll*100):100}%</div></div>
-  `;
-}
 
 function renderPersonCard(name, d) {
   let badge = '';
