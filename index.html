@@ -317,7 +317,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v1.7';
+const DASHBOARD_VERSION = 'v1.8';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -1000,22 +1000,29 @@ function formatWon(n) {
 // ══════════════════════════════════════
 // ATTENDANCE / SALES INPUT
 // ══════════════════════════════════════
+let _dateDefaultsSet = false;
 function populateAgentSelects() {
   const names = STATE.settings.map(s => s['상담원']);
   ['attAgent', 'salesAgent'].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
+    const prevValue = sel.value;
     sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
+    if (names.includes(prevValue)) sel.value = prevValue; // 선택값 유지
   });
   const teamListEl = document.getElementById('teamList');
   if (teamListEl) {
     teamListEl.innerHTML = getTeamOrder().map(t => `<option value="${t}">`).join('');
   }
-  const today = new Date().toISOString().substring(0, 10);
-  const attDate = document.getElementById('attDate');
-  const salesDate = document.getElementById('salesDate');
-  if (attDate) attDate.value = today;
-  if (salesDate) salesDate.value = today;
+  // 날짜 기본값은 최초 1회만 오늘로 설정 (저장 후 새로고침 시 덮어쓰지 않음 — 안 그러면 입력한 날짜가 초기화되는 버그 발생)
+  if (!_dateDefaultsSet) {
+    const today = new Date().toISOString().substring(0, 10);
+    const attDate = document.getElementById('attDate');
+    const salesDate = document.getElementById('salesDate');
+    if (attDate) attDate.value = today;
+    if (salesDate) salesDate.value = today;
+    _dateDefaultsSet = true;
+  }
 }
 
 async function saveAttendance() {
