@@ -87,6 +87,12 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 .ag-sales .ag-title { color:var(--purple); }
 .ag-none .ag-title { color:var(--red); }
 
+/* ── Week history ── */
+.history-title { font-size:12px; font-weight:700; color:var(--text-dim); margin:4px 0 8px; }
+.history-row { display:flex; justify-content:space-between; align-items:center; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 14px; margin-bottom:6px; font-size:12px; box-shadow:var(--shadow); }
+.history-period { color:var(--text-dim); font-weight:600; }
+.history-counts { display:flex; gap:12px; font-weight:600; }
+
 /* ── Summary bar ── */
 .summary-bar { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
 .summary-card { flex:1; min-width:140px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; box-shadow:var(--shadow); }
@@ -203,6 +209,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
   </div>
 
   <div class="achiever-bar" id="achieverBar"></div>
+  <div id="weekHistory"></div>
 
   <div class="summary-bar" id="summaryBar"></div>
   <div id="teamCards"></div>
@@ -266,6 +273,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
+const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
 
 // 첫 주 고정: 2026-07-01(수) ~ 2026-07-03(금)
 const FIRST_WEEK_START = new Date(2026, 6, 1);
@@ -382,17 +390,9 @@ async function checkPassword(zone) {
 // WEEK NAVIGATION
 // ══════════════════════════════════════
 function computeWeekRange() {
-  if (STATE.weekOffset === 0) {
-    STATE.weekStart = new Date(FIRST_WEEK_START);
-    STATE.weekEnd = new Date(FIRST_WEEK_END);
-  } else {
-    const mon = new Date(SECOND_WEEK_MONDAY);
-    mon.setDate(mon.getDate() + (STATE.weekOffset - 1) * 7);
-    const fri = new Date(mon);
-    fri.setDate(mon.getDate() + 4);
-    STATE.weekStart = mon;
-    STATE.weekEnd = fri;
-  }
+  const range = computeWeekRangeForOffset(STATE.weekOffset);
+  STATE.weekStart = range.start;
+  STATE.weekEnd = range.end;
   updateWeekLabel();
 }
 
@@ -420,6 +420,7 @@ function getWeekDatesArray() {
 }
 
 document.getElementById('prevWeek').addEventListener('click', () => {
+  if (STATE.weekOffset <= 0) return;
   STATE.weekOffset -= 1;
   computeWeekRange();
   renderDashboard();
@@ -500,6 +501,22 @@ function normalizeDuration(val) {
   if (parts.length === 3) return (+parts[0])*3600 + (+parts[1])*60 + (+parts[2]);
   if (parts.length === 2) return (+parts[0])*60 + (+parts[1]);
   return parseInt(s) || 0;
+}
+
+// 같은 날짜+전화번호는 최장 통화만 인정, 콜당 최대 20분(CALL_CAP_SEC) 캡 적용
+// 날짜가 바뀌면 그룹키(날짜 포함)가 달라지므로 자동으로 다시 집계됨
+function computeCallTimeSec(calls) {
+  const groups = {};
+  calls.forEach(c => {
+    const day = String(c['날짜']).substring(0, 10);
+    const phone = c['전화번호'] || '';
+    const key = day + '|' + phone;
+    const dur = Number(c['통화시간']) || 0;
+    if (!(key in groups) || dur > groups[key]) groups[key] = dur;
+  });
+  let total = 0;
+  Object.values(groups).forEach(dur => { total += Math.min(dur, CALL_CAP_SEC); });
+  return total;
 }
 
 // ══════════════════════════════════════
@@ -630,17 +647,21 @@ function parseExcelFile(file) {
   });
 }
 
-// ══════════════════════════════════════
-// DASHBOARD RENDERING
-// ══════════════════════════════════════
-function renderDashboard() {
+// ── 임의 기간(start~end)에 대한 상담원별 집계 (현재 주 / 히스토리 공용) ──
+function computeAgentDataForRange(rangeStart, rangeEnd) {
   const dateStr = d => {
     const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
     return `${y}-${m}-${day}`;
   };
-  const wsStr = dateStr(STATE.weekStart);
-  const weStr = dateStr(STATE.weekEnd);
-  const weekDates = getWeekDatesArray();
+  const wsStr = dateStr(rangeStart);
+  const weStr = dateStr(rangeEnd);
+  const rangeDates = [];
+  const dayCount = Math.round((rangeEnd - rangeStart) / 86400000) + 1;
+  for (let i = 0; i < dayCount; i++) {
+    const d = new Date(rangeStart);
+    d.setDate(rangeStart.getDate() + i);
+    rangeDates.push(d);
+  }
 
   const weekCalls = STATE.calls.filter(c => {
     const d = String(c['날짜']).substring(0, 10);
@@ -655,21 +676,13 @@ function renderDashboard() {
     return d >= wsStr && d <= weStr;
   });
 
-  // 월간 이관매출 (면제 여부 판단용) — 이번 주가 속한 달 기준
-  const monthStart = new Date(STATE.weekStart.getFullYear(), STATE.weekStart.getMonth(), 1);
-  const monthEnd = new Date(STATE.weekStart.getFullYear(), STATE.weekStart.getMonth() + 1, 0);
+  const monthStart = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
+  const monthEnd = new Date(rangeStart.getFullYear(), rangeStart.getMonth() + 1, 0);
   const monthStartStr = dateStr(monthStart);
   const monthEndStr = dateStr(monthEnd);
   const monthSales = STATE.sales.filter(s => {
     const d = String(s['날짜']).substring(0, 10);
     return d >= monthStartStr && d <= monthEndStr;
-  });
-
-  const teams = {};
-  STATE.settings.forEach(s => {
-    const team = s['소속팀'];
-    if (!teams[team]) teams[team] = [];
-    teams[team].push(s);
   });
 
   const agentData = {};
@@ -678,10 +691,9 @@ function renderDashboard() {
     const dailyGoal = Number(s['일목표분']) || 0;
     const weekSalesGoal = Number(s['주간이관목표']) || WEEKLY_SALES_GOAL_DEFAULT;
 
-    // 근태 반영 (해당 주 실제 근무일수만큼만 순회)
     let goalDays = 0;
     let leaveDays = [];
-    weekDates.forEach(d => {
+    rangeDates.forEach(d => {
       const ds = dateStr(d);
       const att = weekAtt.find(a => String(a['날짜']).substring(0,10) === ds && a['상담원'] === name);
       if (att) {
@@ -694,7 +706,7 @@ function renderDashboard() {
     const weekGoalMin = dailyGoal * goalDays;
 
     const myCalls = weekCalls.filter(c => c['상담원'] === name);
-    const totalSec = myCalls.reduce((sum, c) => sum + (Number(c['통화시간']) || 0), 0);
+    const totalSec = computeCallTimeSec(myCalls); // 중복번호 최장통화만 + 20분 캡 적용
     const totalMin = totalSec / 60;
     const callCount = myCalls.length;
     const outCount = myCalls.filter(c => c['유형'] === 'out').length;
@@ -719,8 +731,34 @@ function renderDashboard() {
     };
   });
 
+  return agentData;
+}
+
+function computeWeekRangeForOffset(offset) {
+  if (offset === 0) return { start: new Date(FIRST_WEEK_START), end: new Date(FIRST_WEEK_END) };
+  const mon = new Date(SECOND_WEEK_MONDAY);
+  mon.setDate(mon.getDate() + (offset - 1) * 7);
+  const fri = new Date(mon);
+  fri.setDate(mon.getDate() + 4);
+  return { start: mon, end: fri };
+}
+
+// ══════════════════════════════════════
+// DASHBOARD RENDERING
+// ══════════════════════════════════════
+function renderDashboard() {
+  const agentData = computeAgentDataForRange(STATE.weekStart, STATE.weekEnd);
+
+  const teams = {};
+  STATE.settings.forEach(s => {
+    const team = s['소속팀'];
+    if (!teams[team]) teams[team] = [];
+    teams[team].push(s);
+  });
+
   renderAchieverBar(agentData);
   renderSummaryBar(agentData);
+  renderWeekHistory();
 
   const container = document.getElementById('teamCards');
   let html = '';
@@ -738,6 +776,38 @@ function renderDashboard() {
     html += '</div></div>';
   }
   container.innerHTML = html;
+}
+
+// ── 지난 주간 히스토리 (최근 지난주가 위, 첫 주가 아래) ──
+function renderWeekHistory() {
+  const el = document.getElementById('weekHistory');
+  if (!el) return;
+  if (STATE.weekOffset <= 0) { el.innerHTML = ''; return; }
+
+  let html = '<div class="history-title">📜 지난 주간 기록</div>';
+  for (let offset = STATE.weekOffset - 1; offset >= 0; offset--) {
+    const range = computeWeekRangeForOffset(offset);
+    const data = computeAgentDataForRange(range.start, range.end);
+    const both = [], callOnly = [], salesOnly = [], none = [];
+    Object.entries(data).forEach(([name, d]) => {
+      if (d.callAchieved && d.salesAchieved) both.push(name);
+      else if (d.callAchieved) callOnly.push(name);
+      else if (d.salesAchieved) salesOnly.push(name);
+      else none.push(name);
+    });
+    const fmt = d => `${d.getMonth()+1}/${d.getDate()}`;
+    html += `
+      <div class="history-row">
+        <div class="history-period">${fmt(range.start)}~${fmt(range.end)}</div>
+        <div class="history-counts">
+          <span style="color:var(--green)">🏆 ${both.length}</span>
+          <span style="color:var(--blue)">📞 ${callOnly.length}</span>
+          <span style="color:var(--purple)">💰 ${salesOnly.length}</span>
+          <span style="color:var(--red)">⚠️ ${none.length}</span>
+        </div>
+      </div>`;
+  }
+  el.innerHTML = html;
 }
 
 // ── 주간별 달성자 명단 ──
