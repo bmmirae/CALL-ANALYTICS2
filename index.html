@@ -258,6 +258,12 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 <div id="panel-input" class="panel">
   <div id="input-lock"></div>
   <div id="input-content" style="display:none">
+    <div class="week-nav">
+      <button onclick="changeWeek(-1)">‹</button>
+      <span class="week-label" id="weekLabelInput"></span>
+      <button onclick="changeWeek(1)">›</button>
+    </div>
+
     <div class="form-section">
       <div class="form-title">📅 근태 입력</div>
       <div class="form-row">
@@ -317,7 +323,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v1.8';
+const DASHBOARD_VERSION = 'v1.9';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -455,8 +461,10 @@ function computeWeekRange() {
 function updateWeekLabel() {
   const fmt = d => `${d.getMonth()+1}/${d.getDate()}`;
   const days = getWeekdayCount();
-  document.getElementById('weekLabel').innerHTML =
-    `<strong>${fmt(STATE.weekStart)} ~ ${fmt(STATE.weekEnd)}</strong> (근무일 ${days}일)`;
+  const label = `<strong>${fmt(STATE.weekStart)} ~ ${fmt(STATE.weekEnd)}</strong> (근무일 ${days}일)`;
+  document.getElementById('weekLabel').innerHTML = label;
+  const inputLabel = document.getElementById('weekLabelInput');
+  if (inputLabel) inputLabel.innerHTML = label;
 }
 
 function getWeekdayCount() {
@@ -475,17 +483,17 @@ function getWeekDatesArray() {
   return arr;
 }
 
-document.getElementById('prevWeek').addEventListener('click', () => {
-  if (STATE.weekOffset <= 0) return;
-  STATE.weekOffset -= 1;
+function changeWeek(delta) {
+  if (delta < 0 && STATE.weekOffset <= 0) return;
+  STATE.weekOffset += delta;
   computeWeekRange();
   renderDashboard();
-});
-document.getElementById('nextWeek').addEventListener('click', () => {
-  STATE.weekOffset += 1;
-  computeWeekRange();
-  renderDashboard();
-});
+  renderAttendanceList();
+  renderSalesList();
+}
+
+document.getElementById('prevWeek').addEventListener('click', () => changeWeek(-1));
+document.getElementById('nextWeek').addEventListener('click', () => changeWeek(1));
 
 // ══════════════════════════════════════
 // DATA LOADING
@@ -503,10 +511,10 @@ async function loadAllData() {
     STATE.sales = data.sales || [];
 
     document.getElementById('lastSync').textContent = '동기화: ' + new Date().toLocaleTimeString('ko');
-    populateAgentSelects();
-    renderDashboard();
-    renderAttendanceList();
-    renderSalesList();
+    try { populateAgentSelects(); } catch (e) { console.error('populateAgentSelects 오류:', e); }
+    try { renderDashboard(); } catch (e) { console.error('renderDashboard 오류:', e); }
+    try { renderAttendanceList(); } catch (e) { console.error('renderAttendanceList 오류:', e); }
+    try { renderSalesList(); } catch (e) { console.error('renderSalesList 오류:', e); }
   } catch (err) {
     document.getElementById('teamCards').innerHTML =
       `<div class="loading" style="color:var(--red)">데이터 로드 실패: ${err.message}</div>`;
