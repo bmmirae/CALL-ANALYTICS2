@@ -326,7 +326,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v2.0';
+const DASHBOARD_VERSION = 'v2.1';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -367,6 +367,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
   initUpload();
   STATE.authed = sessionStorage.getItem('ca_authed') === 'yes';
+  if (STATE.authed) _pwCache = sessionStorage.getItem('ca_pw') || '';
   computeWeekRange();
   await loadAllData();
 });
@@ -442,6 +443,7 @@ async function checkPassword(zone) {
       STATE.authed = true;
       _pwCache = pw;
       sessionStorage.setItem('ca_authed', 'yes');
+      sessionStorage.setItem('ca_pw', pw);
       renderLockOrContent(zone);
     } else {
       errEl.textContent = '❌ 비밀번호가 올바르지 않습니다';
@@ -640,7 +642,6 @@ async function processUpload() {
     }
     status.textContent = `${allRows.length}건 파싱 완료. 업로드 중...`;
 
-    const pw = sessionStorage.getItem('ca_authed') === 'yes' ? getStoredPassword() : '';
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
