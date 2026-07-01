@@ -107,7 +107,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 .summary-card .value.red { color:var(--red); }
 
 /* ── Team section ── */
-.teams-row { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:14px; align-items:start; }
+.teams-row { display:grid; grid-template-columns:repeat(var(--team-count, 5), minmax(0, 1fr)); gap:14px; align-items:start; }
 .team-section { }
 .team-title { font-size:13px; font-weight:700; color:var(--accent); margin-bottom:10px; padding-left:2px; letter-spacing:.3px; }
 .card-grid { display:flex; flex-direction:column; gap:10px; }
@@ -171,6 +171,20 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 .save-btn { padding:8px 16px; background:var(--green); color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; }
 .save-btn:hover { opacity:.85; }
 
+/* ── Roster table ── */
+.roster-row { display:grid; grid-template-columns:1.2fr 1.2fr 1fr 1.2fr auto; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }
+.roster-row.head { font-size:11px; color:var(--text-dim); font-weight:700; border-bottom:2px solid var(--border); }
+.roster-row input { padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; width:100%; }
+.roster-name { font-size:13px; font-weight:600; }
+.roster-del { width:26px; height:26px; border:none; background:var(--red-bg); color:var(--red); border-radius:6px; cursor:pointer; font-weight:700; }
+.roster-del:hover { opacity:.8; }
+
+/* ── Attendance/Sales record rows ── */
+.record-row { display:grid; grid-template-columns:100px 80px 1fr auto; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.record-date { color:var(--text-dim); }
+.record-name { font-weight:600; }
+.record-row select, .record-row input { padding:5px 8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; }
+
 /* ── Loading ── */
 .loading { text-align:center; padding:60px; color:var(--text-dim); }
 .spinner { display:inline-block; width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .6s linear infinite; margin-bottom:8px; }
@@ -207,6 +221,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
   <button class="tab-btn active" data-tab="dashboard">📊 현황 대시보드</button>
   <button class="tab-btn" data-tab="upload">📤 데이터 업로드</button>
   <button class="tab-btn" data-tab="input">✏️ 근태 · 이관매출</button>
+  <button class="tab-btn" data-tab="roster">👥 인원관리</button>
 </div>
 
 <!-- ═══ 현황 대시보드 ═══ -->
@@ -274,12 +289,35 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 
 <div class="toast" id="toast"></div>
 
+<!-- ═══ 인원관리 (잠금) ═══ -->
+<div id="panel-roster" class="panel">
+  <div id="roster-lock"></div>
+  <div id="roster-content" style="display:none">
+    <div class="form-section">
+      <div class="form-title">👥 인원 관리 (설정)</div>
+      <div id="rosterTable"></div>
+
+      <div class="form-row" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+        <input type="text" id="newAgentName" placeholder="이름">
+        <input type="text" id="newAgentTeam" placeholder="소속팀" list="teamList">
+        <datalist id="teamList"></datalist>
+        <input type="number" id="newAgentDaily" placeholder="일목표(분)" value="60">
+        <input type="number" id="newAgentWeekly" placeholder="주간이관목표(원)" value="2000000">
+        <button class="save-btn" onclick="addAgent()">+ 인원 추가</button>
+      </div>
+
+      <button class="upload-btn" style="margin-top:16px;" onclick="saveRoster()">💾 구글시트에 저장</button>
+      <div class="upload-status" id="rosterStatus"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v1.5';
+const DASHBOARD_VERSION = 'v1.7';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -302,8 +340,14 @@ let STATE = {
   weekStart: null,
   weekEnd: null,
   files: [],
-  authed: false
+  authed: false,
+  rosterDraft: null  // 인원관리 작업용 임시 배열 (저장 전까지)
 };
+
+function getTeamOrder() {
+  const teams = [...new Set(STATE.settings.map(s => s['소속팀']))];
+  return teams.sort();
+}
 
 // ══════════════════════════════════════
 // INIT
@@ -349,6 +393,7 @@ function initTabs() {
 
       if (btn.dataset.tab === 'upload') renderLockOrContent('upload');
       if (btn.dataset.tab === 'input') renderLockOrContent('input');
+      if (btn.dataset.tab === 'roster') renderLockOrContent('roster');
     });
   });
 }
@@ -359,6 +404,7 @@ function renderLockOrContent(zone) {
   if (STATE.authed) {
     lockEl.innerHTML = '';
     contentEl.style.display = 'block';
+    if (zone === 'roster') renderRosterTable();
   } else {
     contentEl.style.display = 'none';
     lockEl.innerHTML = `
@@ -770,8 +816,8 @@ function renderDashboard() {
   renderWeekHistory();
 
   const container = document.getElementById('teamCards');
-  let html = '<div class="teams-row">';
-  const teamOrder = ['BM2-1팀','BM2-2팀','BM2-3팀','BM3-1팀','BM3-2팀'];
+  let html = '<div class="teams-row" id="teamsRow">';
+  const teamOrder = getTeamOrder();
   for (const team of teamOrder) {
     const members = teams[team];
     if (!members) continue;
@@ -786,6 +832,7 @@ function renderDashboard() {
   }
   html += '</div>';
   container.innerHTML = html;
+  document.getElementById('teamsRow').style.setProperty('--team-count', teamOrder.length || 1);
 }
 
 // ── 지난 주간 히스토리 (기본 접힘, 클릭 시 펼침) ──
@@ -960,6 +1007,10 @@ function populateAgentSelects() {
     if (!sel) return;
     sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
   });
+  const teamListEl = document.getElementById('teamList');
+  if (teamListEl) {
+    teamListEl.innerHTML = getTeamOrder().map(t => `<option value="${t}">`).join('');
+  }
   const today = new Date().toISOString().substring(0, 10);
   const attDate = document.getElementById('attDate');
   const salesDate = document.getElementById('salesDate');
@@ -1004,11 +1055,50 @@ function renderAttendanceList() {
     attEl.innerHTML = '<div style="font-size:12px;color:var(--text-dim)">이번 주 근태 기록 없음</div>';
     return;
   }
-  attEl.innerHTML = weekAtt.map(a =>
-    `<div style="font-size:12px;color:var(--text-dim);margin-bottom:2px;">
-      ${String(a['날짜']).substring(0,10)} · ${a['상담원']} · <strong style="color:${a['구분']==='연차'?'var(--red)':'var(--yellow)'}">${a['구분']}</strong>
+  attEl.innerHTML = weekAtt.map(a => `
+    <div class="record-row">
+      <span class="record-date">${String(a['날짜']).substring(0,10)}</span>
+      <span class="record-name">${a['상담원']}</span>
+      <select onchange="updateAttendanceType(${a['_row']}, this.value)">
+        <option value="연차" ${a['구분']==='연차'?'selected':''}>연차</option>
+        <option value="반차" ${a['구분']==='반차'?'selected':''}>반차</option>
+      </select>
+      <button class="roster-del" onclick="deleteAttendance(${a['_row']})" title="삭제">✕</button>
     </div>`
   ).join('');
+}
+
+async function updateAttendanceType(row, value) {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'updateAttendanceType', row, value, password: getStoredPassword() })
+    });
+    const result = await res.json();
+    if (result.status !== 'ok') throw new Error(result.message);
+    showToast('근태 수정 완료');
+    await loadAllData();
+  } catch (err) {
+    alert('수정 실패: ' + err.message);
+  }
+}
+
+async function deleteAttendance(row) {
+  if (!confirm('이 근태 기록을 삭제하시겠습니까?')) return;
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'deleteAttendance', row, password: getStoredPassword() })
+    });
+    const result = await res.json();
+    if (result.status !== 'ok') throw new Error(result.message);
+    showToast('근태 삭제 완료');
+    await loadAllData();
+  } catch (err) {
+    alert('삭제 실패: ' + err.message);
+  }
 }
 
 async function saveSales() {
@@ -1049,11 +1139,47 @@ function renderSalesList() {
     salesEl.innerHTML = '<div style="font-size:12px;color:var(--text-dim)">이번 주 이관매출 기록 없음</div>';
     return;
   }
-  salesEl.innerHTML = weekSales.map(s =>
-    `<div style="font-size:12px;color:var(--text-dim);margin-bottom:2px;">
-      ${String(s['날짜']).substring(0,10)} · ${s['상담원']} · <strong style="color:var(--green)">${formatWon(Number(s['금액']))}</strong>
+  salesEl.innerHTML = weekSales.map(s => `
+    <div class="record-row">
+      <span class="record-date">${String(s['날짜']).substring(0,10)}</span>
+      <span class="record-name">${s['상담원']}</span>
+      <input type="number" value="${Number(s['금액'])}" step="10000" onchange="updateSalesAmount(${s['_row']}, this.value)">
+      <button class="roster-del" onclick="deleteSales(${s['_row']})" title="삭제">✕</button>
     </div>`
   ).join('');
+}
+
+async function updateSalesAmount(row, value) {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'updateSalesAmount', row, value, password: getStoredPassword() })
+    });
+    const result = await res.json();
+    if (result.status !== 'ok') throw new Error(result.message);
+    showToast('이관매출 수정 완료');
+    await loadAllData();
+  } catch (err) {
+    alert('수정 실패: ' + err.message);
+  }
+}
+
+async function deleteSales(row) {
+  if (!confirm('이 이관매출 기록을 삭제하시겠습니까?')) return;
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'deleteSales', row, password: getStoredPassword() })
+    });
+    const result = await res.json();
+    if (result.status !== 'ok') throw new Error(result.message);
+    showToast('이관매출 삭제 완료');
+    await loadAllData();
+  } catch (err) {
+    alert('삭제 실패: ' + err.message);
+  }
 }
 
 // ══════════════════════════════════════
@@ -1064,6 +1190,105 @@ function showToast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ══════════════════════════════════════
+// ROSTER (인원관리)
+// ══════════════════════════════════════
+function ensureRosterDraft() {
+  if (!STATE.rosterDraft) {
+    STATE.rosterDraft = STATE.settings.map(s => ({ ...s }));
+  }
+}
+
+function renderRosterTable() {
+  ensureRosterDraft();
+  const el = document.getElementById('rosterTable');
+  if (!el) return;
+
+  let html = `
+    <div class="roster-row head">
+      <div>이름</div><div>소속팀</div><div>일목표(분)</div><div>주간이관목표(원)</div><div></div>
+    </div>`;
+
+  STATE.rosterDraft.forEach((a, idx) => {
+    html += `
+      <div class="roster-row">
+        <div class="roster-name">${a['상담원']}</div>
+        <input type="text" value="${a['소속팀']}" onchange="updateRosterField(${idx},'소속팀',this.value)">
+        <input type="number" value="${a['일목표분']}" onchange="updateRosterField(${idx},'일목표분',this.value)">
+        <input type="number" value="${a['주간이관목표']}" onchange="updateRosterField(${idx},'주간이관목표',this.value)">
+        <button class="roster-del" onclick="deleteAgent(${idx})" title="삭제">✕</button>
+      </div>`;
+  });
+
+  el.innerHTML = html;
+
+  // 팀 자동완성 목록도 draft 기준으로 갱신
+  const teamListEl = document.getElementById('teamList');
+  if (teamListEl) {
+    const teams = [...new Set(STATE.rosterDraft.map(a => a['소속팀']))].sort();
+    teamListEl.innerHTML = teams.map(t => `<option value="${t}">`).join('');
+  }
+}
+
+function updateRosterField(idx, field, value) {
+  ensureRosterDraft();
+  if (field === '일목표분' || field === '주간이관목표') value = Number(value) || 0;
+  STATE.rosterDraft[idx][field] = value;
+}
+
+function addAgent() {
+  ensureRosterDraft();
+  const name = document.getElementById('newAgentName').value.trim();
+  const team = document.getElementById('newAgentTeam').value.trim();
+  const daily = Number(document.getElementById('newAgentDaily').value) || 0;
+  const weekly = Number(document.getElementById('newAgentWeekly').value) || 2000000;
+  const status = document.getElementById('rosterStatus');
+
+  if (!name || !team) { status.className = 'upload-status error'; status.textContent = '❌ 이름과 소속팀을 입력해주세요'; return; }
+  if (STATE.rosterDraft.some(a => a['상담원'] === name)) { status.className = 'upload-status error'; status.textContent = '❌ 이미 존재하는 이름입니다'; return; }
+
+  STATE.rosterDraft.push({ '상담원': name, '소속팀': team, '일목표분': daily, '주간이관목표': weekly });
+  document.getElementById('newAgentName').value = '';
+  document.getElementById('newAgentTeam').value = '';
+  document.getElementById('newAgentDaily').value = '60';
+  document.getElementById('newAgentWeekly').value = '2000000';
+  status.className = 'upload-status';
+  status.textContent = `"${name}" 추가됨 (아직 저장 안 됨 — 아래 저장 버튼을 눌러주세요)`;
+  renderRosterTable();
+}
+
+function deleteAgent(idx) {
+  const name = STATE.rosterDraft[idx]['상담원'];
+  if (!confirm(`"${name}"님을 삭제하시겠습니까? (통화·근태·이관매출 기록은 시트에 그대로 남고, 대시보드 집계에서만 제외됩니다)`)) return;
+  STATE.rosterDraft.splice(idx, 1);
+  document.getElementById('rosterStatus').textContent = `"${name}" 삭제됨 (아직 저장 안 됨 — 아래 저장 버튼을 눌러주세요)`;
+  renderRosterTable();
+}
+
+async function saveRoster() {
+  const status = document.getElementById('rosterStatus');
+  status.className = 'upload-status';
+  status.textContent = '구글시트에 저장 중...';
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'saveSettings', data: STATE.rosterDraft, password: getStoredPassword() })
+    });
+    const result = await res.json();
+    if (result.status !== 'ok') throw new Error(result.message);
+
+    status.textContent = `✅ 저장 완료 (${result.saved}명)`;
+    showToast('인원 설정 저장 완료');
+    await loadAllData(); // 설정 재로드 → rosterDraft도 초기화됨
+    STATE.rosterDraft = null;
+    renderRosterTable();
+  } catch (err) {
+    status.className = 'upload-status error';
+    status.textContent = '❌ 저장 실패: ' + err.message;
+  }
 }
 </script>
 </body>
