@@ -268,6 +268,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
       <div class="form-title">📅 근태 입력</div>
       <div class="form-row">
         <input type="date" id="attDate">
+        <select id="attTeamFilter" onchange="filterAgentSelect('att')"></select>
         <select id="attAgent"></select>
         <select id="attType" onchange="toggleCustomMinInput()">
           <option value="연차">연차 (목표 100% 차감)</option>
@@ -285,6 +286,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
       <div class="form-title">💰 이관매출 입력</div>
       <div class="form-row">
         <input type="date" id="salesDate">
+        <select id="salesTeamFilter" onchange="filterAgentSelect('sales')"></select>
         <select id="salesAgent"></select>
         <input type="text" id="salesCompany" placeholder="업체명">
         <input type="number" id="salesAmount" placeholder="금액 (원)" step="10000">
@@ -326,7 +328,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v2.1';
+const DASHBOARD_VERSION = 'v2.2';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -1024,17 +1026,22 @@ function formatWon(n) {
 // ══════════════════════════════════════
 let _dateDefaultsSet = false;
 function populateAgentSelects() {
-  const names = STATE.settings.map(s => s['상담원']);
-  ['attAgent', 'salesAgent'].forEach(id => {
+  // 팀 필터 드롭다운 채우기 (전체 + 팀 목록)
+  const teamOrder = getTeamOrder();
+  ['attTeamFilter', 'salesTeamFilter'].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const prevValue = sel.value;
-    sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
-    if (names.includes(prevValue)) sel.value = prevValue; // 선택값 유지
+    sel.innerHTML = '<option value="">전체 팀</option>' + teamOrder.map(t => `<option value="${t}">${t}</option>`).join('');
+    if (teamOrder.includes(prevValue)) sel.value = prevValue;
   });
+
+  filterAgentSelect('att');
+  filterAgentSelect('sales');
+
   const teamListEl = document.getElementById('teamList');
   if (teamListEl) {
-    teamListEl.innerHTML = getTeamOrder().map(t => `<option value="${t}">`).join('');
+    teamListEl.innerHTML = teamOrder.map(t => `<option value="${t}">`).join('');
   }
   // 날짜 기본값은 최초 1회만 오늘로 설정 (저장 후 새로고침 시 덮어쓰지 않음 — 안 그러면 입력한 날짜가 초기화되는 버그 발생)
   if (!_dateDefaultsSet) {
@@ -1045,6 +1052,23 @@ function populateAgentSelects() {
     if (salesDate) salesDate.value = today;
     _dateDefaultsSet = true;
   }
+}
+
+// 팀 필터 선택에 따라 상담원 드롭다운 옵션을 좁혀줌 (zone: 'att' | 'sales')
+function filterAgentSelect(zone) {
+  const teamFilterEl = document.getElementById(zone + 'TeamFilter');
+  const agentSelEl = document.getElementById(zone + 'Agent');
+  if (!agentSelEl) return;
+  const selectedTeam = teamFilterEl ? teamFilterEl.value : '';
+  const prevValue = agentSelEl.value;
+
+  const filtered = selectedTeam
+    ? STATE.settings.filter(s => s['소속팀'] === selectedTeam)
+    : STATE.settings;
+
+  agentSelEl.innerHTML = filtered.map(s => `<option value="${s['상담원']}">${s['상담원']}</option>`).join('');
+  const names = filtered.map(s => s['상담원']);
+  if (names.includes(prevValue)) agentSelEl.value = prevValue;
 }
 
 function toggleCustomMinInput() {
