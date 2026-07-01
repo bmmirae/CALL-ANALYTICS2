@@ -180,7 +180,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 .roster-del:hover { opacity:.8; }
 
 /* ── Attendance/Sales record rows ── */
-.record-row { display:grid; grid-template-columns:100px 80px 1fr auto; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.record-row { display:grid; grid-template-columns:100px 80px 1fr 90px auto; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; }
 .record-date { color:var(--text-dim); }
 .record-name { font-weight:600; }
 .record-row select, .record-row input { padding:5px 8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; }
@@ -269,10 +269,12 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
       <div class="form-row">
         <input type="date" id="attDate">
         <select id="attAgent"></select>
-        <select id="attType">
+        <select id="attType" onchange="toggleCustomMinInput()">
           <option value="연차">연차 (목표 100% 차감)</option>
           <option value="반차">반차 (목표 50% 적용)</option>
+          <option value="기타">기타 (차감분 직접 입력)</option>
         </select>
+        <input type="number" id="attCustomMin" placeholder="차감 분" style="display:none;width:100px;" min="0">
         <button class="save-btn" onclick="saveAttendance()">저장</button>
       </div>
       <div id="attStatus" style="font-size:12px;color:var(--text-dim);margin-top:8px;"></div>
@@ -284,6 +286,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
       <div class="form-row">
         <input type="date" id="salesDate">
         <select id="salesAgent"></select>
+        <input type="text" id="salesCompany" placeholder="업체명">
         <input type="number" id="salesAmount" placeholder="금액 (원)" step="10000">
         <button class="save-btn" onclick="saveSales()">저장</button>
       </div>
@@ -323,7 +326,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v1.9';
+const DASHBOARD_VERSION = 'v2.0';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -756,6 +759,7 @@ function computeAgentDataForRange(rangeStart, rangeEnd) {
     const weekSalesGoal = Number(s['주간이관목표']) || WEEKLY_SALES_GOAL_DEFAULT;
 
     let goalDays = 0;
+    let customDeductMin = 0;
     let leaveDays = [];
     rangeDates.forEach(d => {
       const ds = dateStr(d);
@@ -763,11 +767,17 @@ function computeAgentDataForRange(rangeStart, rangeEnd) {
       if (att) {
         if (att['구분'] === '연차') { goalDays += 0; leaveDays.push({ date: ds, type: '연차' }); }
         else if (att['구분'] === '반차') { goalDays += 0.5; leaveDays.push({ date: ds, type: '반차' }); }
+        else if (att['구분'] === '기타') {
+          goalDays += 1;
+          const m = Number(att['차감분']) || 0;
+          customDeductMin += m;
+          leaveDays.push({ date: ds, type: `기타 -${m}분` });
+        }
         else goalDays += 1;
       } else goalDays += 1;
     });
 
-    const weekGoalMin = dailyGoal * goalDays;
+    const weekGoalMin = Math.max(0, dailyGoal * goalDays - customDeductMin);
 
     const myCalls = weekCalls.filter(c => c['상담원'] === name);
     const totalSec = computeCallTimeSec(myCalls); // 중복번호 최장통화만 + 20분 캡 적용
@@ -941,6 +951,9 @@ function renderPersonCard(name, d) {
     const types = d.leaveDays.map(l => l.type);
     if (types.includes('연차')) badge += `<span class="person-badge badge-leave">연차 ${d.leaveDays.filter(l=>l.type==='연차').length}일</span> `;
     if (types.includes('반차')) badge += `<span class="person-badge badge-half">반차 ${d.leaveDays.filter(l=>l.type==='반차').length}일</span> `;
+    d.leaveDays.filter(l => l.type.startsWith('기타')).forEach(l => {
+      badge += `<span class="person-badge badge-half">${l.type}</span> `;
+    });
   }
   if (d.monthlyExempt) badge += `<span class="person-badge badge-exempt">이관 면제</span>`;
 
@@ -1033,11 +1046,21 @@ function populateAgentSelects() {
   }
 }
 
+function toggleCustomMinInput() {
+  const type = document.getElementById('attType').value;
+  document.getElementById('attCustomMin').style.display = (type === '기타') ? 'inline-block' : 'none';
+}
+
 async function saveAttendance() {
   const date = document.getElementById('attDate').value;
   const agent = document.getElementById('attAgent').value;
   const type = document.getElementById('attType').value;
+  const customMin = type === '기타' ? (Number(document.getElementById('attCustomMin').value) || 0) : 0;
   if (!date || !agent) return;
+  if (type === '기타' && customMin <= 0) {
+    document.getElementById('attStatus').textContent = '❌ 차감 분을 입력해주세요';
+    return;
+  }
 
   const status = document.getElementById('attStatus');
   status.textContent = '저장 중...';
@@ -1045,11 +1068,13 @@ async function saveAttendance() {
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'saveAttendance', data: [{ '날짜': date, '상담원': agent, '구분': type }], password: getStoredPassword() })
+      body: JSON.stringify({ action: 'saveAttendance', data: [{ '날짜': date, '상담원': agent, '구분': type, '차감분': customMin }], password: getStoredPassword() })
     });
     const result = await res.json();
     if (result.status !== 'ok') throw new Error(result.message);
-    status.textContent = `✅ ${agent} ${date} ${type} 저장 완료`;
+    status.textContent = type === '기타'
+      ? `✅ ${agent} ${date} 기타(${customMin}분 차감) 저장 완료`
+      : `✅ ${agent} ${date} ${type} 저장 완료`;
     showToast('근태 저장 완료');
     await loadAllData();
   } catch (err) {
@@ -1077,10 +1102,30 @@ function renderAttendanceList() {
       <select onchange="updateAttendanceType(${a['_row']}, this.value)">
         <option value="연차" ${a['구분']==='연차'?'selected':''}>연차</option>
         <option value="반차" ${a['구분']==='반차'?'selected':''}>반차</option>
+        <option value="기타" ${a['구분']==='기타'?'selected':''}>기타</option>
       </select>
+      ${a['구분']==='기타'
+        ? `<input type="number" value="${Number(a['차감분'])||0}" min="0" style="width:70px;" onchange="updateAttendanceCustomMin(${a['_row']}, this.value)">`
+        : `<span></span>`}
       <button class="roster-del" onclick="deleteAttendance(${a['_row']})" title="삭제">✕</button>
     </div>`
   ).join('');
+}
+
+async function updateAttendanceCustomMin(row, value) {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'updateAttendanceCustomMin', row, value, password: getStoredPassword() })
+    });
+    const result = await res.json();
+    if (result.status !== 'ok') throw new Error(result.message);
+    showToast('차감분 수정 완료');
+    await loadAllData();
+  } catch (err) {
+    alert('수정 실패: ' + err.message);
+  }
 }
 
 async function updateAttendanceType(row, value) {
@@ -1119,6 +1164,7 @@ async function deleteAttendance(row) {
 async function saveSales() {
   const date = document.getElementById('salesDate').value;
   const agent = document.getElementById('salesAgent').value;
+  const company = document.getElementById('salesCompany').value.trim();
   const amount = Number(document.getElementById('salesAmount').value);
   if (!date || !agent || !amount) return;
 
@@ -1128,12 +1174,13 @@ async function saveSales() {
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'saveSales', data: [{ '날짜': date, '상담원': agent, '금액': amount }], password: getStoredPassword() })
+      body: JSON.stringify({ action: 'saveSales', data: [{ '날짜': date, '상담원': agent, '금액': amount, '업체명': company }], password: getStoredPassword() })
     });
     const result = await res.json();
     if (result.status !== 'ok') throw new Error(result.message);
-    status.textContent = `✅ ${agent} ${formatWon(amount)} 저장 완료`;
+    status.textContent = `✅ ${agent} ${company ? company+' ' : ''}${formatWon(amount)} 저장 완료`;
     document.getElementById('salesAmount').value = '';
+    document.getElementById('salesCompany').value = '';
     showToast('이관매출 저장 완료');
     await loadAllData();
   } catch (err) {
@@ -1158,10 +1205,27 @@ function renderSalesList() {
     <div class="record-row">
       <span class="record-date">${String(s['날짜']).substring(0,10)}</span>
       <span class="record-name">${s['상담원']}</span>
+      <input type="text" value="${s['업체명']||''}" placeholder="업체명" onchange="updateSalesCompany(${s['_row']}, this.value)">
       <input type="number" value="${Number(s['금액'])}" step="10000" onchange="updateSalesAmount(${s['_row']}, this.value)">
       <button class="roster-del" onclick="deleteSales(${s['_row']})" title="삭제">✕</button>
     </div>`
   ).join('');
+}
+
+async function updateSalesCompany(row, value) {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'updateSalesCompany', row, value, password: getStoredPassword() })
+    });
+    const result = await res.json();
+    if (result.status !== 'ok') throw new Error(result.message);
+    showToast('업체명 수정 완료');
+    await loadAllData();
+  } catch (err) {
+    alert('수정 실패: ' + err.message);
+  }
 }
 
 async function updateSalesAmount(row, value) {
