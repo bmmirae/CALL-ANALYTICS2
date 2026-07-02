@@ -215,6 +215,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
   <h1><span>CALL</span> ANALYTICS</h1>
   <div class="header-right">
     <span style="font-size:11px;color:var(--text-dim)" id="versionTag"></span>
+    <span style="font-size:11px;color:var(--text-dim)" id="lastUpload"></span>
     <span style="font-size:11px;color:var(--text-dim)" id="lastSync"></span>
     <button class="theme-toggle" id="themeToggle" title="테마 전환">🌙</button>
   </div>
@@ -331,7 +332,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v2.5';
+const DASHBOARD_VERSION = 'v2.6';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -521,6 +522,11 @@ async function loadAllData() {
     STATE.sales = data.sales || [];
 
     document.getElementById('lastSync').textContent = '동기화: ' + new Date().toLocaleTimeString('ko');
+    if (data.lastUpload) {
+      const d = new Date(data.lastUpload);
+      const label = `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      document.getElementById('lastUpload').textContent = '📤 마지막 업로드: ' + label;
+    }
     try { populateAgentSelects(); } catch (e) { console.error('populateAgentSelects 오류:', e); }
     try { renderDashboard(); } catch (e) { console.error('renderDashboard 오류:', e); }
     try { renderAttendanceList(); } catch (e) { console.error('renderAttendanceList 오류:', e); }
