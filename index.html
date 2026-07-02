@@ -86,6 +86,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 .ag-call .ag-title { color:var(--blue); }
 .ag-sales .ag-title { color:var(--purple); }
 .ag-none .ag-title { color:var(--red); }
+.ag-exempt .ag-title { color:var(--text-dim); }
 
 /* ── Week history ── */
 .history-title { font-size:12px; font-weight:700; color:var(--text-dim); margin:4px 0 8px; }
@@ -337,7 +338,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v3.0';
+const DASHBOARD_VERSION = 'v3.1';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -893,9 +894,10 @@ function renderWeekHistory() {
   for (let offset = STATE.weekOffset - 1; offset >= 0; offset--) {
     const range = computeWeekRangeForOffset(offset);
     const data = computeAgentDataForRange(range.start, range.end);
-    const both = [], callOnly = [], salesOnly = [], none = [];
+    const both = [], callOnly = [], salesOnly = [], none = [], exempt = [];
     Object.entries(data).forEach(([name, d]) => {
-      if (d.callAchieved && d.salesAchieved) both.push(name);
+      if (d.dailyGoal === 0) exempt.push(name);
+      else if (d.callAchieved && d.salesAchieved) both.push(name);
       else if (d.callAchieved) callOnly.push(name);
       else if (d.salesAchieved) salesOnly.push(name);
       else none.push(name);
@@ -914,6 +916,7 @@ function renderWeekHistory() {
             <span style="color:var(--blue)">📞 ${callOnly.length}</span>
             <span style="color:var(--purple)">💰 ${salesOnly.length}</span>
             <span style="color:var(--red)">⚠️ ${none.length}</span>
+            <span style="color:var(--text-dim)">🎖️ ${exempt.length}</span>
           </div>
         </div>
         <div class="history-detail" id="histDetail${idx}" style="display:none">
@@ -922,6 +925,7 @@ function renderWeekHistory() {
             <div class="achiever-group ag-call"><div class="ag-title">📞 콜 달성 (${callOnly.length}명)</div><div class="ag-names">${chipList(callOnly,'--blue')}</div></div>
             <div class="achiever-group ag-sales"><div class="ag-title">💰 이관 달성 (${salesOnly.length}명)</div><div class="ag-names">${chipList(salesOnly,'--purple')}</div></div>
             <div class="achiever-group ag-none"><div class="ag-title">⚠️ 미달성 (${none.length}명)</div><div class="ag-names">${chipList(none,'--red')}</div></div>
+            <div class="achiever-group ag-exempt"><div class="ag-title">🎖️ 목표 예외 (${exempt.length}명)</div><div class="ag-names">${chipList(exempt,'--text-dim')}</div></div>
           </div>
         </div>
       </div>`;
@@ -940,9 +944,10 @@ function toggleHistoryRow(idx) {
 
 // ── 주간별 달성자 명단 ──
 function renderAchieverBar(agentData) {
-  const both = [], callOnly = [], salesOnly = [], none = [];
+  const both = [], callOnly = [], salesOnly = [], none = [], exempt = [];
   Object.entries(agentData).forEach(([name, d]) => {
-    if (d.callAchieved && d.salesAchieved) both.push(name);
+    if (d.dailyGoal === 0) exempt.push(name); // 목표 미설정(고액 예외) 인원은 별도 분류
+    else if (d.callAchieved && d.salesAchieved) both.push(name);
     else if (d.callAchieved) callOnly.push(name);
     else if (d.salesAchieved) salesOnly.push(name);
     else none.push(name);
@@ -968,6 +973,10 @@ function renderAchieverBar(agentData) {
     <div class="achiever-group ag-none">
       <div class="ag-title">⚠️ 미달성 (${none.length}명)</div>
       <div class="ag-names">${chipList(none, '--red')}</div>
+    </div>
+    <div class="achiever-group ag-exempt">
+      <div class="ag-title">🎖️ 목표 예외 (${exempt.length}명)</div>
+      <div class="ag-names">${chipList(exempt, '--text-dim')}</div>
     </div>
   `;
 }
