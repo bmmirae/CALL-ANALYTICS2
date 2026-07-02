@@ -117,7 +117,10 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 /* ── Person card ── */
 .person-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; transition:.15s; box-shadow:var(--shadow); }
 .person-card:hover { background:var(--card-hover); border-color:var(--accent-dim); }
-.person-card.exempt { border-color:var(--purple); box-shadow:0 0 0 1px var(--purple-bg); }
+.person-card.ach-call { border-color:var(--blue); box-shadow:0 0 0 1px var(--blue); }
+.person-card.ach-sales { border-color:var(--purple); box-shadow:0 0 0 1px var(--purple); }
+.person-card.ach-both { border-color:var(--green); box-shadow:0 0 0 1px var(--green); }
+.person-card.ach-monthly { border:2px solid var(--purple); box-shadow:0 0 0 2px var(--purple-bg); background:var(--purple-bg); }
 .person-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
 .person-name { font-size:14px; font-weight:700; }
 .person-badge { font-size:10px; padding:2px 8px; border-radius:10px; font-weight:600; }
@@ -334,7 +337,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v2.9';
+const DASHBOARD_VERSION = 'v3.0';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -981,7 +984,21 @@ function renderPersonCard(name, d) {
       badge += `<span class="person-badge badge-half">${l.type}</span> `;
     });
   }
-  if (d.monthlyExempt) badge += `<span class="person-badge badge-exempt">이관 면제</span>`;
+  let achClass = '';
+  let achBadge = '';
+  if (d.monthlyExempt) {
+    achClass = 'ach-monthly';
+    achBadge = `<span class="person-badge badge-exempt">🏆 월 300만 달성</span>`;
+  } else if (d.callAchieved && d.salesAchieved) {
+    achClass = 'ach-both';
+    achBadge = `<span class="person-badge" style="background:var(--green-bg);color:var(--green)">🏆 콜+이관 달성</span>`;
+  } else if (d.callAchieved) {
+    achClass = 'ach-call';
+    achBadge = `<span class="person-badge" style="background:var(--blue-bg,transparent);color:var(--blue);border:1px solid var(--blue)">📞 콜 달성</span>`;
+  } else if (d.salesAchieved) {
+    achClass = 'ach-sales';
+    achBadge = `<span class="person-badge" style="background:var(--purple-bg);color:var(--purple)">💰 이관 달성</span>`;
+  }
 
   let callBar = '';
   if (d.dailyGoal === 0) {
@@ -1029,10 +1046,10 @@ function renderPersonCard(name, d) {
   }
 
   return `
-    <div class="person-card ${d.monthlyExempt ? 'exempt' : ''}">
+    <div class="person-card ${achClass}">
       <div class="person-header">
         <span class="person-name">${name}</span>
-        <div>${badge}</div>
+        <div>${badge}${achBadge}</div>
       </div>
       ${callBar}
       ${salesBar}
