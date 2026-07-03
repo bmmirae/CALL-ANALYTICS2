@@ -25,6 +25,8 @@
   --blue: #2f6fed;
   --purple: #8054e8;
   --purple-bg: rgba(128,84,232,.12);
+  --gold: #b8860b;
+  --gold-bg: rgba(184,134,11,.12);
   --shadow: 0 1px 3px rgba(20,20,40,.08);
 }
 html[data-theme="dark"] {
@@ -45,6 +47,8 @@ html[data-theme="dark"] {
   --blue: #60a5fa;
   --purple: #a78bfa;
   --purple-bg: rgba(167,139,250,.15);
+  --gold: #ffd700;
+  --gold-bg: rgba(255,215,0,.15);
   --shadow: none;
 }
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -86,7 +90,8 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 .ag-call .ag-title { color:var(--blue); }
 .ag-sales .ag-title { color:var(--purple); }
 .ag-none .ag-title { color:var(--red); }
-.ag-exempt .ag-title { color:var(--text-dim); }
+.ag-exempt .ag-title { color:var(--gold); font-weight:800; }
+.ag-exempt { border-color:var(--gold); box-shadow:0 0 0 1px var(--gold-bg); }
 
 /* ── Week history ── */
 .history-title { font-size:12px; font-weight:700; color:var(--text-dim); margin:4px 0 8px; }
@@ -128,6 +133,22 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 .badge-leave { background:var(--red-bg); color:var(--red); }
 .badge-half { background:var(--yellow-bg); color:var(--yellow); }
 .badge-exempt { background:var(--purple-bg); color:var(--purple); }
+.badge-sparkle {
+  position:relative;
+  background:linear-gradient(90deg, #fff6d5, #ffd700, #b8860b, #ffd700, #fff6d5);
+  background-size:300% 100%;
+  color:#5c4400;
+  font-weight:800;
+  animation:sparkle-shimmer 2.5s linear infinite, sparkle-glow 1.6s ease-in-out infinite;
+}
+@keyframes sparkle-shimmer {
+  0% { background-position:300% 0; }
+  100% { background-position:-300% 0; }
+}
+@keyframes sparkle-glow {
+  0%,100% { box-shadow:0 0 3px 1px rgba(255,215,0,.5); }
+  50% { box-shadow:0 0 9px 3px rgba(255,215,0,.95); }
+}
 
 .metric-row { margin-bottom:8px; }
 .metric-label { display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); margin-bottom:4px; }
@@ -338,7 +359,7 @@ body { font-family: -apple-system, 'Pretendard', sans-serif; background:var(--bg
 // CONFIG
 // ══════════════════════════════════════
 const API_URL = 'https://script.google.com/macros/s/AKfycbwcK6nX6iyf2PAg7Cbs3LjplHruF-wYJV_j8f_h0Zr4ZHhv_9I4LcIXqvCaFVgzFiwLLw/exec';
-const DASHBOARD_VERSION = 'v3.1';
+const DASHBOARD_VERSION = 'v3.2';
 const MONTHLY_EXEMPT_AMOUNT = 3000000; // 월 300만원 이상 달성 시 주간 이관목표 면제
 const WEEKLY_SALES_GOAL_DEFAULT = 2000000;
 const CALL_CAP_SEC = 1200; // 콜당 최대 20분 인정
@@ -925,7 +946,7 @@ function renderWeekHistory() {
             <div class="achiever-group ag-call"><div class="ag-title">📞 콜 달성 (${callOnly.length}명)</div><div class="ag-names">${chipList(callOnly,'--blue')}</div></div>
             <div class="achiever-group ag-sales"><div class="ag-title">💰 이관 달성 (${salesOnly.length}명)</div><div class="ag-names">${chipList(salesOnly,'--purple')}</div></div>
             <div class="achiever-group ag-none"><div class="ag-title">⚠️ 미달성 (${none.length}명)</div><div class="ag-names">${chipList(none,'--red')}</div></div>
-            <div class="achiever-group ag-exempt"><div class="ag-title">🎖️ 목표 예외 (${exempt.length}명)</div><div class="ag-names">${chipList(exempt,'--text-dim')}</div></div>
+            <div class="achiever-group ag-exempt"><div class="ag-title">🎖️ 목표 예외 (1억 이상 달성자) (${exempt.length}명)</div><div class="ag-names">${chipList(exempt,'--gold')}</div></div>
           </div>
         </div>
       </div>`;
@@ -975,8 +996,8 @@ function renderAchieverBar(agentData) {
       <div class="ag-names">${chipList(none, '--red')}</div>
     </div>
     <div class="achiever-group ag-exempt">
-      <div class="ag-title">🎖️ 목표 예외 (${exempt.length}명)</div>
-      <div class="ag-names">${chipList(exempt, '--text-dim')}</div>
+      <div class="ag-title">🎖️ 목표 예외 (1억 이상 달성자) (${exempt.length}명)</div>
+      <div class="ag-names">${chipList(exempt, '--gold')}</div>
     </div>
   `;
 }
@@ -985,6 +1006,9 @@ function renderAchieverBar(agentData) {
 
 function renderPersonCard(name, d) {
   let badge = '';
+  if (d.dailyGoal === 0) {
+    badge += `<span class="person-badge badge-sparkle">✨ 1억 이상 매출 달성자</span> `;
+  }
   if (d.leaveDays.length > 0) {
     const types = d.leaveDays.map(l => l.type);
     if (types.includes('연차')) badge += `<span class="person-badge badge-leave">연차 ${d.leaveDays.filter(l=>l.type==='연차').length}일</span> `;
